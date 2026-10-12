@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>행맨 게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+  /* 게임 팔레트는 라운드별 파스텔 배경이 핵심이라 라이트/다크 모두 같은 색을 씁니다. */
+  :root{
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    --ink:#3a2323;
+    --ink-soft:#7a5c5c;
+    --card:rgba(255,255,255,.74);
+    --line:rgba(58,35,35,.12);
+    --orange:#FF9F1C;
+    --blue:#5B7CFA;
+    --good:#BDF0C6;
+    --bad:#F6D2D2;
+    --hint:#FFE08A;
+    --red:#E5484D;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ color-scheme:light; } }
+  :root[data-theme="dark"]{ color-scheme:light; }
+  html{ height:100%; scroll-padding-top:env(safe-area-inset-top,0px); }
+  *,*::before,*::after{ box-sizing:inherit; }
+  body{
+    margin:0; min-height:100%;
+    font-family:'Jua','Arial Rounded MT Bold','Hiragino Maru Gothic ProN','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    color:var(--ink);
+    background-color:#FFE8D1;
+    transition:background-color .9s ease;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+    -webkit-text-size-adjust:100%;
+  }
+  button{ font-family:inherit; color:inherit; }
+  :focus-visible{ outline:3px solid var(--blue); outline-offset:2px; }
+
+  .wrap{ max-width:480px; margin:0 auto; padding:14px 16px 28px; }
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  .card{
+    background:var(--card);
+    border:2px solid var(--line);
+    border-radius:28px;
+    box-shadow:0 6px 0 rgba(58,35,35,.07);
+  }
+
+  /* ---------- 캐릭터 SVG ---------- */
+  .svgbox{ display:flex; justify-content:center; }
+  .svgbox svg{ display:block; height:clamp(200px,38vh,350px); width:auto; aspect-ratio:720/1110; max-width:100%; overflow:visible; }
+  .swing{ transform-origin:205px 20px; animation:sway 3.4s ease-in-out infinite; }
+  @keyframes sway{ 0%,100%{ transform:rotate(-2.2deg); } 50%{ transform:rotate(2.2deg); } }
+  .lost .swing{ animation:shake .45s ease-in-out 3; }
+  @keyframes shake{ 0%,100%{ transform:rotate(0); } 25%{ transform:rotate(-6deg); } 75%{ transform:rotate(6deg); } }
+  .part{
+    opacity:0; transform:scale(.35);
+    transform-box:fill-box; transform-origin:center;
+    transition:opacity .3s ease, transform .5s cubic-bezier(.34,1.56,.64,1);
+  }
+  .part.show, .all .part{ opacity:1; transform:none; }
+
+  /* 공책(모눈종이) 느낌의 그림 칸 */
+  .paper{
+    background-color:#fff;
+    background-image:
+      linear-gradient(rgba(91,124,250,.17) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(91,124,250,.17) 1px, transparent 1px);
+    background-size:18px 18px;
+  }
+
+  /* ---------- 메뉴 ---------- */
+  #menu .wrap{ text-align:center; padding-top:22px; }
+  .title{ font-size:46px; line-height:1.1; margin:6px 0 4px; letter-spacing:1px; }
+  .sub{ margin:0 0 10px; color:var(--ink-soft); font-size:19px; }
+  .menu-stage{ padding:14px 10px 6px; margin-bottom:16px; }
+  .levels{ display:grid; gap:12px; }
+  .level-btn{
+    display:flex; align-items:center; gap:14px; width:100%;
+    padding:14px 18px; border:none; border-radius:24px; text-align:left;
+    font-size:26px; cursor:pointer; box-shadow:0 5px 0 rgba(58,35,35,.14);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .level-btn:active{ transform:translateY(4px); box-shadow:0 1px 0 rgba(58,35,35,.14); }
+  .level-btn .em{ font-size:34px; }
+  .level-btn small{ display:block; font-size:16px; color:var(--ink-soft); margin-top:2px; }
+  .level-btn.easy{ background:#C9F0BF; }
+  .level-btn.mid{ background:#FFE49B; }
+  .level-btn.hard{ background:#FFC3C9; }
+  .rules{ margin:16px 4px 0; font-size:16px; color:var(--ink-soft); line-height:1.5; }
+
+  /* ---------- 게임 ---------- */
+  .top{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .pill{ background:var(--card); border:2px solid var(--line); border-radius:999px; padding:5px 14px; font-size:18px; white-space:nowrap; }
+  .dots{ display:flex; gap:5px; align-items:center; }
+  .dots span{ width:11px; height:11px; border-radius:50%; border:2px solid rgba(58,35,35,.35); background:transparent; transition:transform .3s ease, background-color .3s ease; }
+  .dots span.reached{ border-color:rgba(58,35,35,.55); }
+  .dots span.now{ transform:scale(1.45); }
+  .stage{ padding:10px 8px 6px; }
+
+  .word{
+    --tw:30px;
+    display:flex; flex-wrap:wrap; justify-content:center; gap:6px;
+    margin:16px 0 12px; min-height:calc(var(--tw)*1.4 + 6px);
+  }
+  .tile{
+    width:var(--tw); height:calc(var(--tw)*1.4);
+    display:flex; align-items:flex-end; justify-content:center;
+    border-bottom:4px solid var(--blue);
+    font-size:calc(var(--tw)*.92); line-height:1; padding-bottom:2px;
+  }
+  .tile span{ display:block; }
+  .tile.on span{ animation:pop .35s cubic-bezier(.34,1.56,.64,1); }
+  .tile.hinted{ color:#D97A00; }
+  .tile.miss{ color:var(--red); }
+  @keyframes pop{ from{ transform:scale(.3); opacity:0; } to{ transform:scale(1); opacity:1; } }
+
+  .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+  .hearts{ display:flex; gap:3px; }
+  .hearts span{ font-size:21px; transition:transform .3s ease, opacity .3s ease, filter .3s ease; }
+  .hearts span.off{ filter:grayscale(1); opacity:.28; transform:scale(.8); }
+
+  .hint{
+    position:relative; border:none; cursor:pointer;
+    background:var(--orange); color:var(--ink);
+    font-size:22px; padding:9px 22px; border-radius:999px;
+    box-shadow:0 4px 0 #D97A00;
+    transition:transform .12s ease, box-shadow .12s ease, opacity .2s ease;
+  }
+  .hint:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #D97A00; }
+  .hint:disabled{ opacity:.45; cursor:not-allowed; box-shadow:0 4px 0 #b8b0a5; background:#f0c98a; }
+  .hint b{
+    position:absolute; top:-8px; right:-6px; min-width:24px; height:24px; padding:0 6px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--ink); color:#fff; border-radius:999px; font-size:15px; font-weight:400;
+  }
+
+  .kb{ display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+  .key{
+    flex:0 0 calc((100% - 48px)/7); height:46px;
+    border:none; border-radius:16px; background:#fff; color:var(--ink);
+    font-size:23px; cursor:pointer;
+    box-shadow:0 4px 0 rgba(58,35,35,.16);
+    transition:transform .1s ease, box-shadow .1s ease, background-color .2s ease;
+  }
+  .key:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 rgba(58,35,35,.16); }
+  .key:disabled{ cursor:default; }
+  .key:disabled:not(.correct):not(.wrong):not(.hinted){ opacity:.45; }
+  .key.correct{ background:var(--good); box-shadow:none; transform:translateY(3px); }
+  .key.hinted{ background:var(--hint); box-shadow:none; transform:translateY(3px); }
+  .key.wrong{ background:var(--bad); color:#b06060; box-shadow:none; transform:translateY(3px); text-decoration:line-through; }
+
+  /* ---------- 팝업 ---------- */
+  .overlay{
+    position:fixed; inset:0; z-index:20; display:none;
+    align-items:center; justify-content:center;
+    padding:20px; background:rgba(58,35,35,.42);
+  }
+  .overlay.open{ display:flex; }
+  .dialog{
+    width:100%; max-width:380px; text-align:center;
+    background:#fff; border-radius:30px; padding:26px 20px 22px;
+    box-shadow:0 8px 0 rgba(58,35,35,.16);
+    animation:dlg .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes dlg{ from{ transform:scale(.7); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  .dlg-title{ font-size:36px; line-height:1.15; margin-bottom:8px; }
+  .dlg-title.lose{ color:var(--red); font-size:44px; letter-spacing:2px; }
+  .dlg-answer{ font-size:22px; color:var(--ink-soft); margin-bottom:12px; word-break:break-all; }
+  .dlg-q{ font-size:22px; margin:0 0 18px; line-height:1.35; }
+  .dlg-btns{ display:flex; gap:12px; justify-content:center; }
+  .btn{
+    flex:1; max-width:150px; border:none; border-radius:999px; padding:12px 0;
+    font-size:24px; cursor:pointer; box-shadow:0 4px 0 rgba(58,35,35,.16);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(58,35,35,.16); }
+  .btn.yes{ background:#A6E7B8; }
+  .btn.no{ background:#E3E6EE; }
+
+  /* ---------- 종료 ---------- */
+  #end .wrap{ text-align:center; padding-top:40px; }
+  .end-card{ padding:30px 22px 26px; }
+  .end-card .big{ font-size:40px; margin-bottom:10px; }
+  .end-card p{ font-size:22px; line-height:1.4; margin:0 0 20px; }
+  .end-card .btn{ max-width:220px; width:100%; }
+
+  .dlg-answer,.dlg-q{ white-space:pre-line; }
+  .dlg-title.trophy{ font-size:38px; }
+  .level-btn.ko{ background:#DCD3FF; }
+  .chip{ margin-top:14px; padding:10px 22px; border:none; border-radius:999px; font-size:20px; background:#fff; box-shadow:0 4px 0 rgba(58,35,35,.14); cursor:pointer; }
+  .chip.on{ background:#FFD43B; }
+  .tbar{ position:relative; height:26px; border-radius:999px; background:rgba(255,255,255,.75); border:2px solid var(--line); overflow:hidden; margin-bottom:10px; }
+  .tbar[hidden]{ display:none; }
+  .tbar i{ position:absolute; inset:0 auto 0 0; width:100%; background:#8CE99A; transition:width 1s linear, background-color .3s; }
+  .tbar.low i{ background:#FF8787; }
+  .tbar span{ position:relative; display:block; text-align:center; font-size:17px; line-height:22px; }
+  .tile.gap{ margin-left:10px; }
+  .foot{ display:flex; justify-content:center; gap:12px; margin-top:18px; }
+  .giveup,.mute{ border:none; border-radius:999px; padding:9px 18px; font-size:18px; background:rgba(255,255,255,.85); box-shadow:0 3px 0 rgba(58,35,35,.14); cursor:pointer; }
+  #fx{ position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:30; }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation:none !important; transition-duration:.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 시작 화면 -->
+<main id="menu" class="screen active">
+  <div class="wrap">
+    <h1 class="title">행맨 게임</h1>
+    <p class="sub">영어 단어를 맞혀서 행맨을 구해 주세요!</p>
+    <div class="card paper menu-stage"><div class="svgbox all" id="menuSvgBox"></div></div>
+    <div class="levels" role="group" aria-label="난이도 선택">
+      <button class="level-btn easy" data-diff="easy"><span class="em">🌱</span><span>초급<small>짧고 쉬운 단어</small></span></button>
+      <button class="level-btn mid" data-diff="mid"><span class="em">🌿</span><span>중급<small>익숙한 긴 단어</small></span></button>
+      <button class="level-btn hard" data-diff="hard"><span class="em">🌳</span><span>고급<small>길고 어려운 단어</small></span></button>
+      <button class="level-btn ko" data-diff="ko"><span class="em">🇰🇷</span><span>한국어 맛보기<small>자음·모음으로 맞혀요</small></span></button>
+    </div>
+    <button class="chip" id="taBtn" type="button" aria-pressed="false">⏱ 타임어택 (단어당 60초) : OFF</button>
+    <p class="rules">틀릴 때마다 행맨이 하나씩 나타나요.<br>6번 틀리면 GAME OVER! 라운드마다 힌트💡는 3번 쓸 수 있어요.</p>
+  </div>
+</main>
+
+<!-- 게임 화면 -->
+<main id="game" class="screen">
+  <div class="wrap">
+    <div class="top">
+      <span class="pill" id="roundPill">라운드 1</span>
+      <div class="dots" id="dots" aria-hidden="true"></div>
+      <span class="pill" id="levelPill">초급</span>
+    </div>
+    <div class="tbar" id="tbar" hidden><i id="tfill"></i><span>⏱ <b id="tnum">60</b>초</span></div>
+    <div class="card paper stage"><div class="svgbox" id="gameSvgBox"></div></div>
+    <div class="word" id="word" aria-live="polite"></div>
+    <div class="row">
+      <div class="hearts" id="hearts" aria-label="남은 기회"></div>
+      <button class="hint" id="hintBtn" type="button">힌트💡<b id="hintCount">3</b></button>
+    </div>
+    <div class="kb" id="kb" role="group" aria-label="알파벳 선택"></div>
+    <div class="foot"><button class="giveup" id="giveBtn" type="button">🏳️ 중도포기</button><button class="mute" id="muteBtn" type="button">🔊 소리 ON</button></div>
+  </div>
+</main>
+
+<!-- 종료 화면 -->
+<main id="end" class="screen">
+  <div class="wrap">
+    <div class="card end-card">
+      <div class="big" id="endBig">👋 게임 종료</div>
+      <p id="endMsg"></p>
+      <button class="btn yes" id="homeBtn" type="button">처음으로</button>
+    </div>
+  </div>
+</main>
+
+<canvas id="fx"></canvas>
+<!-- 예/아니오 팝업 -->
+<div class="overlay" id="overlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlg-title" id="dlgTitle"></div>
+    <div class="dlg-answer" id="dlgAnswer"></div>
+    <p class="dlg-q" id="dlgQ"></p>
+    <div class="dlg-btns">
+      <button class="btn yes" id="yesBtn" type="button">예</button>
+      <button class="btn no" id="noBtn" type="button">아니오</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var MAX_WRONG = 6;
+  var MAX_HINTS = 3;
+  var TA_SEC = 60;
+  var MENU_BG = '#FFE8D1';
+
+  // 라운드가 올라갈 때마다 바뀌는 파스텔 배경: 빨강 → 주황 → 노랑 → 초록 → 파랑 → 남색 → 보라 → 하양
+  var BGS = ['#FFD3D6','#FFE0C4','#FFF4BF','#D7F3D0','#D0E8FF','#D5D9FF','#EBD9FF','#FFFFFF'];
+
+  var LEVEL_LABEL = { easy:'초급', mid:'중급', hard:'고급', ko:'한국어' };
+
+  // 사전에 실제로 있는 단어만 사용 ("단어:뜻"). 라운드가 올라갈수록 뒤쪽 티어에서 뽑아요.
+  function W(s){ return s.split(' '); }
+  var WORDS = {
+    easy: [
+      W('cat:고양이 dog:개 sun:태양 hat:모자 book:책 fish:물고기'),
+      W('apple:사과 water:물 house:집 green:초록색 happy:행복한 bread:빵'),
+      W('flower:꽃 orange:오렌지 school:학교 garden:정원 friend:친구 pencil:연필'),
+      W('kitchen:부엌 teacher:선생님 morning:아침 picture:그림 brother:형제 chicken:닭')
+    ],
+    mid: [
+      W('planet:행성 bridge:다리 forest:숲 travel:여행하다 doctor:의사 market:시장'),
+      W('question:질문 problem:문제 machine:기계 weather:날씨 library:도서관 science:과학'),
+      W('situation:상황 exercise:운동 hospital:병원 calendar:달력 birthday:생일 umbrella:우산'),
+      W('adventure:모험 education:교육 important:중요한 wonderful:멋진 delicious:맛있는 vegetable:채소')
+    ],
+    hard: [
+      W('diligent:부지런한 eloquent:유창한 paradox:역설 pinnacle:정점 tolerance:관용 obstacle:장애물'),
+      W('nostalgia:향수 ephemeral:덧없는 meticulous:꼼꼼한 labyrinth:미로 hypocrisy:위선 phenomenon:현상'),
+      W('perseverance:인내 entrepreneur:기업가 catastrophe:대참사 camouflage:위장 hypothesis:가설 bureaucracy:관료제'),
+      W('onomatopoeia:의성어 quintessential:본질적인 juxtaposition:병치 conscientious:양심적인 kaleidoscope:만화경 pneumonia:폐렴')
+    ]
+  };
+  var KO = W('나무:tree 바다:sea 하늘:sky 고양이:cat 학교:school 친구:friend 바나나:banana 강아지:puppy 우유:milk 고래:whale 나비:butterfly 구름:cloud 노래:song 기차:train 바람:wind 여행:trip');
+  var KO_KEYS = 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅔ';
+  var CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  var JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  var JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+
+  // 단어를 맞힐 낱칸(units)으로 쪼개요. 영어는 알파벳, 한국어는 자음·모음.
+  function mk(text, meaning, ko){
+    var units = [], starts = [];
+    if (ko){
+      for (var i = 0; i < text.length; i++){
+        var c = text.charCodeAt(i) - 0xAC00;
+        if (c < 0 || c > 11171) return null;
+        var ps = [CHO[Math.floor(c / 588)], JUNG[Math.floor((c % 588) / 28)]];
+        if (c % 28) ps.push(JONG[c % 28]);
+        ps.forEach(function(x, j){ units.push(x); starts.push(j === 0); });
+      }
+      if (!units.every(function(u){ return KO_KEYS.indexOf(u) >= 0; })) return null;
+    } else {
+      text = text.toUpperCase();
+      if (!/^[A-Z]+$/.test(text)) return null;
+      units = text.split('');
+      starts = units.map(function(){ return false; });
+    }
+    return { text:text, units:units, starts:starts, meaning:meaning };
+  }
+
+  function $(id){ return document.getElementById(id); }
+
+  // ---------- 상태 ----------
+  var S = {
+    diff:null, lang:'en', ta:false, maxRound:8, round:1, cleared:0, word:'', units:[], starts:[], meaning:'', timeout:false,
+    guessed:new Set(), hinted:new Set(),
+    wrong:0, hints:MAX_HINTS, status:'menu', used:{}
+  };
+  var timer = null;
+  var onYes = null, onNo = null;
+  var keyEls = {};
+
+  // ---------- 캐릭터 SVG (직접 그린 졸라맨 그림을 그대로 따라 그린 것) ----------
+  var PATHS = {"head":"M291.1 545.0 292.0 542.4 326.9 535.0 354.0 525.4 379.8 512.0 403.0 495.3 411.0 501.0 425.0 503.7 436.0 501.3 461.0 492.7 474.0 485.0 484.0 474.9 492.0 463.8 502.0 442.4 507.0 440.3 514.5 433.0 525.0 411.7 535.0 381.0 538.3 363.0 536.9 345.0 531.0 333.6 525.0 331.1 521.8 333.0 520.1 336.0 521.4 360.0 517.3 379.0 506.3 410.0 500.2 422.0 497.0 424.2 484.0 411.7 479.0 411.0 472.0 412.9 466.0 408.0 461.0 406.5 449.0 409.9 448.1 409.0 448.4 386.0 445.7 381.0 439.9 377.0 439.4 374.0 436.0 369.0 436.7 350.0 435.2 331.0 431.2 321.0 425.1 314.0 418.0 312.9 415.8 314.0 413.9 318.0 414.3 323.0 416.9 329.0 418.3 342.0 418.5 360.0 417.0 362.2 393.0 351.7 385.2 346.0 398.3 331.0 398.4 328.0 397.0 326.6 391.9 328.0 379.0 341.5 368.0 334.5 360.0 327.0 353.0 323.3 348.6 323.0 343.0 326.3 346.0 305.0 344.0 299.9 337.0 295.6 331.0 298.0 327.7 304.0 323.2 334.0 320.0 371.2 315.0 371.1 305.5 368.0 307.2 356.0 305.0 348.5 298.0 342.5 287.0 341.2 278.8 345.0 276.4 352.0 278.7 359.0 290.5 370.0 290.0 372.5 278.8 378.0 270.0 379.9 255.0 379.2 243.0 376.4 240.0 372.0 235.6 359.0 232.6 338.0 234.2 318.0 242.1 291.0 237.0 283.5 230.0 281.9 224.5 284.0 219.9 291.0 212.6 316.0 211.0 336.7 208.0 341.3 188.9 357.0 168.0 370.5 152.1 378.0 140.0 379.4 139.4 374.0 146.7 341.0 161.7 305.0 169.5 292.0 179.0 280.1 187.0 271.2 203.0 258.9 211.4 247.0 210.8 242.0 206.4 239.0 206.1 237.0 200.0 236.6 169.8 263.0 158.0 277.0 146.9 294.0 134.5 321.0 127.8 341.0 120.6 377.0 119.2 409.0 121.9 427.0 120.0 426.4 103.6 404.0 102.5 399.0 103.1 386.0 101.5 382.0 97.0 378.1 90.0 377.2 83.0 381.5 76.8 382.0 72.0 385.6 69.7 390.0 63.4 441.0 62.0 442.5 54.8 411.0 55.7 383.0 58.3 357.0 61.6 334.0 66.0 316.0 74.7 288.0 81.0 273.4 81.5 269.0 79.5 264.0 74.0 262.6 66.0 271.3 65.8 270.0 81.0 239.5 102.7 209.0 123.0 188.0 145.7 170.0 177.0 151.9 206.0 141.7 230.0 136.9 252.0 136.9 282.0 141.7 304.0 147.9 319.2 154.0 322.7 158.0 325.8 168.0 329.8 174.0 334.0 177.0 341.0 177.9 339.7 190.0 342.0 196.7 346.0 199.8 350.0 200.2 356.0 196.9 364.0 185.8 371.0 168.0 373.0 166.8 375.6 168.0 377.6 180.0 375.1 186.0 364.0 193.9 362.1 197.0 365.0 202.5 370.0 203.9 377.0 203.2 388.0 195.8 396.0 201.0 406.0 202.5 417.0 197.1 423.1 188.0 426.0 187.0 439.0 189.9 453.0 195.8 467.6 206.0 483.0 221.7 498.9 244.0 520.7 286.0 526.0 290.7 533.0 292.4 545.3 306.0 545.0 307.7 541.0 308.6 531.0 305.8 525.0 306.0 519.9 312.0 521.0 319.5 526.0 323.6 533.0 326.3 544.0 327.1 552.5 325.0 566.0 318.1 572.1 310.0 571.6 303.0 568.4 299.0 556.0 291.6 541.5 279.0 517.0 233.0 502.5 212.0 490.1 198.0 475.3 185.0 460.0 175.5 442.0 168.5 421.0 165.1 414.1 156.0 405.4 150.0 403.5 138.0 417.0 125.3 423.2 133.0 426.0 144.0 432.0 148.8 439.4 146.0 443.0 142.0 451.0 138.1 460.0 128.9 466.8 115.0 469.1 102.0 468.3 90.0 461.3 74.0 455.0 67.3 449.0 64.0 435.0 61.9 423.0 63.3 415.0 55.7 406.0 51.8 393.0 52.4 377.0 61.6 376.0 58.0 377.4 42.0 374.0 37.4 369.0 35.3 362.0 37.2 353.0 45.6 347.2 53.0 338.3 69.0 334.8 82.0 336.4 108.0 313.0 95.5 286.0 86.4 277.0 75.6 272.0 73.5 269.0 73.8 264.7 76.0 262.3 79.0 260.5 83.0 261.0 87.9 264.0 94.4 272.1 102.0 278.2 115.0 280.0 122.3 256.0 118.4 234.0 117.7 215.0 120.5 196.0 125.4 172.0 133.9 153.0 144.3 134.0 156.8 108.3 179.0 95.7 192.0 79.8 214.0 70.0 230.3 62.4 247.0 57.9 261.0 57.3 269.0 58.3 276.0 62.7 278.0 49.8 313.0 42.0 350.0 37.3 400.0 37.3 411.0 39.8 430.0 47.7 456.0 57.4 475.0 59.0 490.0 63.0 500.6 68.5 509.0 82.0 521.4 97.0 530.3 108.0 533.6 147.0 535.5 156.8 531.0 158.5 526.0 161.0 524.4 193.0 536.2 215.0 541.1 247.0 544.4 276.0 543.8 279.0 545.4ZM393.0 129.9 386.0 128.4 385.1 127.0 381.6 113.0 380.6 102.0 381.1 94.0 384.6 83.0 392.0 73.3 400.0 69.8 404.0 70.9 408.1 75.0 410.1 85.0 416.0 89.8 421.8 89.0 428.6 82.0 432.0 80.8 442.9 82.0 443.4 83.0 442.0 83.9 434.7 86.0 428.0 89.9 415.0 101.4 402.0 115.3ZM365.0 137.1 359.8 130.0 359.2 121.0 352.8 92.0 353.3 80.0 358.0 70.3 365.9 81.0 362.7 94.0 362.6 106.0 365.9 121.0 370.5 132.0ZM440.0 125.5 429.7 113.0 440.2 104.0 444.0 102.6 448.0 103.2 450.3 106.0 448.2 114.0ZM333.0 140.1 322.0 134.6 300.2 127.0 300.3 122.0 296.9 110.0 305.0 112.1 323.0 121.5 337.0 132.0 339.2 135.0ZM384.0 148.1 378.0 148.8 371.5 146.0 374.0 144.9 383.0 145.3 385.4 147.0ZM343.0 168.4 342.0 168.9 340.9 166.0 344.9 154.0 348.0 150.6 352.0 149.3 353.3 155.0 345.2 163.0ZM392.0 193.2 389.7 193.0 391.1 179.0 388.0 167.0 389.0 165.1 396.0 163.1 403.0 169.1 402.1 177.0 404.5 184.0ZM341.0 365.5 339.0 365.3 338.8 364.0 342.0 332.3 361.9 353.0 359.0 356.0ZM299.0 363.3 296.0 363.1 287.9 357.0 284.5 352.0 285.0 348.8 292.0 347.4 298.2 350.0 301.0 356.0ZM278.0 522.1 258.0 522.9 235.0 522.0 217.0 519.5 196.0 514.6 179.0 508.7 159.0 499.0 144.0 489.0 133.8 480.0 119.0 462.0 112.0 446.9 128.0 461.8 140.0 468.6 151.0 470.2 156.5 466.0 158.8 461.0 156.6 452.0 143.8 431.0 138.6 418.0 137.0 404.0 138.0 392.7 151.0 393.6 160.0 392.3 180.0 383.8 202.0 370.5 219.0 377.9 232.7 401.0 239.9 409.0 251.0 418.1 273.0 428.1 293.0 430.6 299.0 429.2 307.6 424.0 311.2 420.0 314.0 412.8 321.2 418.0 327.0 419.9 334.5 417.0 337.5 413.0 339.2 407.0 338.3 387.0 339.3 375.0 368.0 358.7 389.0 370.4 413.1 381.0 414.5 384.0 405.1 419.0 401.0 429.2 388.0 450.0 390.0 456.2 395.0 460.2 399.0 460.4 407.6 456.0 399.0 468.0 376.0 488.4 346.0 505.1 309.0 517.2ZM214.0 367.0 209.6 364.0 213.0 361.1 215.2 366.0ZM295.0 409.1 281.0 408.0 270.0 404.2 259.6 398.0 249.3 387.0 275.0 386.4 295.0 377.9 294.3 393.0 295.9 408.0ZM320.0 384.3 317.6 381.0 318.0 379.8 320.8 381.0ZM428.0 484.0 423.0 484.6 416.2 482.0 432.8 458.0 443.0 434.0 453.0 429.3 452.9 441.0 456.0 445.6 463.0 448.9 469.2 447.0 479.9 434.0 481.6 434.0 482.9 439.0 480.4 448.0 473.4 460.0 464.0 470.3 455.0 475.4ZM144.0 516.5 122.0 516.2 106.0 514.2 96.7 509.0 83.7 499.0 79.1 491.0 85.0 485.1 87.1 478.0 82.7 464.0 81.4 453.0 82.3 442.0 84.0 437.7 86.0 439.8 95.0 462.8 107.0 481.9 124.0 500.1 144.2 515.0Z","eyes":"M358.8 443.0 365.6 437.0 366.2 430.0 361.0 424.5 353.0 423.9 347.0 428.3 345.3 433.0 345.7 437.0 351.0 443.1ZM196.5 450.0 203.2 447.0 205.4 441.0 201.0 432.7 194.0 430.3 187.5 434.0 186.1 441.0 190.0 448.7Z","mouth":"M244.0 500.0 247.1 494.0 256.0 485.8 267.0 479.7 279.0 475.3 291.0 474.5 299.0 476.7 312.9 486.0 315.5 491.0 318.0 492.8 322.9 491.0 324.6 487.0 320.0 481.1 303.0 470.8 293.0 468.0 280.0 468.5 261.0 475.4 248.4 484.0 242.4 490.0 239.3 496.0 240.3 500.0Z","body":"M329.5 888.0 331.7 877.0 331.0 838.3 325.8 786.0 318.6 685.0 312.4 644.0 313.3 639.0 311.2 629.0 308.6 625.0 297.2 564.0 291.2 544.0 293.8 541.0 273.0 540.6 272.0 541.0 273.0 543.5 277.4 545.0 278.5 558.0 290.5 621.0 288.8 626.0 290.7 638.0 294.7 642.0 301.0 679.5 314.9 850.0 315.3 880.0 312.7 883.0 312.5 887.0 314.0 888.5Z","arms":"M123.5 829.0 133.5 820.0 134.8 814.0 139.0 807.0 162.0 775.4 196.0 736.5 233.0 698.3 292.0 641.1 294.0 640.4 296.2 642.0 294.3 626.0 292.0 621.9 206.7 704.0 151.8 764.0 132.0 790.0 115.4 816.0 113.9 821.0 114.8 826.0 118.3 829.0ZM477.4 719.0 480.4 718.0 482.5 715.0 482.3 711.0 480.7 709.0 416.0 671.9 403.0 665.7 362.0 650.2 308.0 626.1 306.7 628.0 307.7 639.0 310.0 645.3 312.0 645.9 312.5 643.0 314.0 642.5 356.3 661.0 400.0 677.6 431.8 695.0 457.0 711.1 470.0 717.5Z","legs":"M218.3 1043.0 225.2 1036.0 268.0 967.1 298.7 922.0 321.0 892.9 327.0 890.6 329.7 888.0 331.0 879.9 316.0 879.7 310.0 883.8 293.6 903.0 271.1 934.0 227.9 1001.0 210.8 1030.0 209.0 1035.0 209.9 1040.0 214.0 1043.1ZM449.1 1040.0 452.5 1036.0 451.2 1030.0 430.0 1009.9 401.8 976.0 383.0 955.7 335.0 912.7 326.0 907.4 320.0 906.2 317.0 907.4 316.0 911.2 321.0 918.2 375.0 967.9 420.8 1021.0 440.5 1038.0 445.0 1040.5Z"};
+
+  // 틀린 횟수 1~6 → 머리, 눈, 입, 몸통, 팔, 다리 순서
+  function hangmanSVG(){
+    var ink = '#111';
+    function part(stage, key){
+      return '<g class="part" data-stage="' + stage + '"><path d="' + PATHS[key] + '" fill="' + ink + '" fill-rule="evenodd"/></g>';
+    }
+    return '' +
+'<svg viewBox="-100 0 720 1110" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="행맨 캐릭터">' +
+'<g fill="none" stroke="' + ink + '" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M-100 1090H120"/>' +
+  '<path d="M-20 1090Q-27 560 -20 20"/>' +
+  '<path d="M-20 20Q100 15 222 21"/>' +
+  '<path d="M-20 150Q40 92 100 25"/>' +
+'</g>' +
+'<g class="swing">' +
+  '<path d="M205 22V122" fill="none" stroke="' + ink + '" stroke-width="10" stroke-linecap="round"/>' +
+  part(6,'legs') + part(4,'body') + part(5,'arms') + part(1,'head') + part(2,'eyes') + part(3,'mouth') +
+'</g>' +
+'</svg>';
+  }
+
+  // ---------- 화면 전환 ----------
+  function showScreen(name){
+    ['menu','game','end'].forEach(function(id){
+      $(id).classList.toggle('active', id === name);
+    });
+    window.scrollTo(0,0);
+  }
+  function setBg(color){ document.body.style.backgroundColor = color; }
+  function roundBg(){ return BGS[Math.min(S.round - 1, BGS.length - 1)]; }
+
+  // ---------- 세팅 ----------
+  function buildStatic(){
+    $('menuSvgBox').innerHTML = hangmanSVG('menu');
+    $('gameSvgBox').innerHTML = hangmanSVG('game');
+
+    var hearts = $('hearts');
+    for (var i = 0; i < MAX_WRONG; i++){
+      var h = document.createElement('span'); h.textContent = '❤️'; hearts.appendChild(h);
+    }
+    var dots = $('dots');
+    for (var d = 0; d < BGS.length; d++){
+      var s = document.createElement('span'); s.style.setProperty('--c', BGS[d]); dots.appendChild(s);
+    }
+
+  }
+
+  function buildKeys(){
+    var kb = $('kb'); kb.innerHTML = ''; keyEls = {};
+    var ko = S.lang === 'ko';
+    kb.setAttribute('aria-label', ko ? '자음 모음 선택' : '알파벳 선택');
+    (ko ? KO_KEYS : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ').split('').forEach(function(L){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'key'; b.textContent = L;
+      b.setAttribute('aria-label', L);
+      b.addEventListener('click', function(){ guess(L); });
+      kb.appendChild(b); keyEls[L] = b;
+    });
+  }
+
+  function setTileSize(){
+    var len = S.units.length || 1;
+    var avail = Math.min(window.innerWidth, 480) - 40;
+    var tw = Math.max(18, Math.min(36, Math.floor(avail / len) - 6));
+    $('word').style.setProperty('--tw', tw + 'px');
+  }
+
+  function buildWord(){
+    var box = $('word'); box.innerHTML = '';
+    S.units.forEach(function(ch, i){
+      var t = document.createElement('div'); t.className = 'tile'; t.dataset.ch = ch;
+      if (S.lang === 'ko' && S.starts[i] && i > 0) t.classList.add('gap');
+      t.appendChild(document.createElement('span'));
+      box.appendChild(t);
+    });
+    setTileSize();
+  }
+
+  // ---------- 소리 (브라우저에서 직접 만든 짧은 브금) ----------
+  var AC = null, muted = false;
+  function ac(){
+    if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
+    if (AC && AC.state === 'suspended'){ try { AC.resume(); } catch(e){} }
+    return AC;
+  }
+  function tone(f, t, d, type, v){
+    if (muted) return;
+    var c = ac(); if (!c) return;
+    try {
+      var o = c.createOscillator(), g = c.createGain(), s = c.currentTime + t;
+      o.type = type || 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(v || 0.16, s + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + d);
+      o.connect(g); g.connect(c.destination); o.start(s); o.stop(s + d + 0.05);
+    } catch(e){}
+  }
+  function sfx(kind){
+    if (kind === 'win'){
+      [523,659,784,1047,784,1047,1319].forEach(function(f, i){ tone(f, i * 0.12, 0.28, 'triangle', 0.16); });
+      tone(1568, 0.9, 0.7, 'sine', 0.1); tone(1047, 0.9, 0.7, 'sine', 0.1);
+    } else if (kind === 'lose'){
+      [392,370,349,330].forEach(function(f, i){ tone(f, i * 0.34, 0.5, 'sawtooth', 0.07); });
+      tone(196, 1.4, 1.1, 'sawtooth', 0.07);
+    } else if (kind === 'ok'){ tone(880, 0, 0.12, 'sine', 0.1); }
+    else if (kind === 'no'){ tone(200, 0, 0.22, 'square', 0.05); }
+  }
+
+  // ---------- 파티클 ----------
+  var fx = $('fx'), fc = fx.getContext('2d'), ps = [], raf = 0;
+  function fitFx(){ fx.width = window.innerWidth; fx.height = window.innerHeight; }
+  function burst(n){
+    fitFx();
+    var cols = ['#FF6B6B','#FFA94D','#FFD43B','#69DB7C','#4DABF7','#9775FA','#F783AC'];
+    for (var i = 0; i < n; i++){
+      ps.push({ x:fx.width / 2 + (Math.random() - .5) * 140, y:fx.height * .38,
+        vx:(Math.random() - .5) * 15, vy:-Math.random() * 14 - 3, s:6 + Math.random() * 7,
+        r:Math.random() * 6, vr:(Math.random() - .5) * .4, c:cols[i % cols.length], life:110 + Math.random() * 40 });
+    }
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function tick(){
+    fc.clearRect(0, 0, fx.width, fx.height);
+    ps = ps.filter(function(q){ return q.life > 0 && q.y < fx.height + 30; });
+    ps.forEach(function(q){
+      q.vy += .35; q.x += q.vx; q.y += q.vy; q.vx *= .99; q.r += q.vr; q.life--;
+      fc.save(); fc.translate(q.x, q.y); fc.rotate(q.r);
+      fc.fillStyle = q.c; fc.globalAlpha = Math.min(1, q.life / 30);
+      fc.fillRect(-q.s / 2, -q.s / 3, q.s, q.s * .6); fc.restore();
+    });
+    if (ps.length) raf = requestAnimationFrame(tick);
+    else { raf = 0; fc.clearRect(0, 0, fx.width, fx.height); }
+  }
+
+  // ---------- 타임어택 ----------
+  var tInt = null, tLeft = TA_SEC;
+  function stopTimer(){ clearInterval(tInt); tInt = null; }
+  function drawTime(){
+    var l = Math.max(tLeft, 0);
+    $('tnum').textContent = l;
+    $('tfill').style.width = (l / TA_SEC * 100) + '%';
+    $('tbar').classList.toggle('low', l <= 10);
+  }
+  function startTimer(){
+    stopTimer();
+    if (!S.ta || S.status !== 'playing') return;
+    tInt = setInterval(function(){
+      tLeft--; drawTime();
+      if (tLeft <= 0){ stopTimer(); if (S.status === 'playing'){ S.timeout = true; lose(); } }
+    }, 1000);
+  }
+  function isDlg(){ return $('overlay').classList.contains('open'); }
+
+  // ---------- 게임 흐름 ----------
+  function startGame(diff){
+    S.diff = diff; S.lang = diff === 'ko' ? 'ko' : 'en';
+    S.maxRound = S.lang === 'ko' ? 3 : 8;
+    S.round = 1; S.cleared = 0; S.used = {};
+    showScreen('game');
+    startRound();
+  }
+
+  function pickWord(){
+    var tier, pool;
+    if (S.lang === 'ko'){
+      var all = KO.map(function(s){ var p = s.split(':'); return mk(p[0], p[1], true); })
+        .filter(Boolean).sort(function(a, b){ return a.units.length - b.units.length; });
+      var cs = Math.ceil(all.length / 3);
+      tier = Math.min(S.round - 1, 2); pool = all.slice(tier * cs, (tier + 1) * cs);
+    } else {
+      tier = Math.min(Math.floor((S.round - 1) / 2), 3);
+      pool = WORDS[S.diff][tier].map(function(s){ var p = s.split(':'); return mk(p[0], p[1], false); }).filter(Boolean);
+    }
+    var key = S.diff + ':' + tier, used = S.used[key] || (S.used[key] = new Set());
+    var avail = pool.filter(function(w){ return !used.has(w.text); });
+    if (!avail.length){ used.clear(); avail = pool.slice(); }
+    var w = avail[Math.floor(Math.random() * avail.length)];
+    used.add(w.text);
+    return w;
+  }
+
+  function startRound(){
+    clearTimeout(timer); stopTimer(); closeDialog();
+    var w = pickWord();
+    S.word = w.text; S.units = w.units; S.starts = w.starts; S.meaning = w.meaning;
+    S.guessed = new Set(); S.hinted = new Set();
+    S.wrong = 0; S.hints = MAX_HINTS; S.status = 'playing'; S.timeout = false;
+    $('gameSvgBox').classList.remove('lost');
+    buildKeys(); buildWord(); setBg(roundBg());
+    tLeft = TA_SEC; $('tbar').hidden = !S.ta; drawTime();
+    render(); startTimer();
+  }
+
+  function isWon(){
+    return S.units.every(function(c){ return S.guessed.has(c); });
+  }
+
+  function guess(L){
+    if (S.status !== 'playing' || isDlg() || S.guessed.has(L)) return;
+    S.guessed.add(L);
+    var hit = S.units.indexOf(L) !== -1;
+    if (!hit) S.wrong++;
+    sfx(hit ? 'ok' : 'no');
+    afterMove();
+  }
+
+  function useHint(){
+    if (S.status !== 'playing' || isDlg() || S.hints <= 0) return;
+    var left = [];
+    S.units.forEach(function(c){
+      if (!S.guessed.has(c) && left.indexOf(c) === -1) left.push(c);
+    });
+    if (!left.length) return;
+    var ch = left[Math.floor(Math.random() * left.length)];
+    S.hints--; S.guessed.add(ch); S.hinted.add(ch);
+    sfx('ok');
+    afterMove();
+  }
+
+  function afterMove(){
+    if (isWon()) { win(); }
+    else if (S.wrong >= MAX_WRONG) { lose(); }
+    else { render(); }
+  }
+
+  function meaningText(){ return '정답: ' + S.word + ' (뜻: ' + S.meaning + ')'; }
+
+  function win(){
+    stopTimer();
+    S.status = 'won'; S.cleared = S.round;
+    render();
+    var last = S.round >= S.maxRound;
+    burst(last ? 240 : 110); sfx('win');
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      if (last){
+        openDialog({
+          kind:'trophy', title:'🏆 축하합니다!',
+          answer:'당신은 단어의 천재?!\n' + meaningText(),
+          question:'모든 라운드를 클리어했어요!\n다시 도전하시겠습니까?',
+          yes:function(){ S.round = 1; S.cleared = 0; S.used = {}; startRound(); },
+          no:endGame
+        });
+      } else {
+        openDialog({
+          kind:'win', title:'🎉 정답이에요!', answer:meaningText(),
+          question:'다음 라운드에 도전하시겠습니까?',
+          yes:function(){ S.round++; startRound(); },
+          no:endGame
+        });
+      }
+    }, 800);
+  }
+
+  function lose(){
+    stopTimer();
+    S.status = 'lost';
+    $('gameSvgBox').classList.add('lost');
+    render(); sfx('lose');
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      openDialog({
+        kind:'lose', title:'GAME OVER',
+        answer:(S.timeout ? '⏰ 시간 초과!\n' : '') + meaningText(),
+        question:'다시 도전하시겠습니까?',
+        yes:function(){ S.round = 1; S.cleared = 0; S.used = {}; startRound(); },
+        no:endGame
+      });
+    }, 1100);
+  }
+
+  function giveUp(){
+    if (S.status !== 'playing' || isDlg()) return;
+    stopTimer();
+    openDialog({
+      kind:'ask', title:'🏳️ 중도포기', answer:'',
+      question:'정말로 포기하시겠습니까...?',
+      yes:endGame, no:function(){ startTimer(); }
+    });
+  }
+
+  function endGame(){
+    clearTimeout(timer); stopTimer();
+    closeDialog();
+    S.status = 'ended';
+    var full = S.cleared > 0 && S.cleared >= S.maxRound;
+    $('endBig').textContent = full ? '🏆 모두 클리어!' : '👋 게임 종료';
+    $('endMsg').textContent = full ? '당신은 단어의 천재?! 최고예요 👏'
+      : (S.cleared > 0 ? '라운드 ' + S.cleared + '까지 클리어했어요! 멋져요 👏' : '아쉽지만 다음에 또 도전해 봐요!');
+    setBg(MENU_BG);
+    showScreen('end');
+  }
+
+  // ---------- 팝업 ----------
+  function openDialog(cfg){
+    var t = $('dlgTitle');
+    t.textContent = cfg.title;
+    t.className = 'dlg-title ' + cfg.kind;
+    $('dlgAnswer').textContent = cfg.answer;
+    $('dlgQ').textContent = cfg.question;
+    onYes = cfg.yes; onNo = cfg.no;
+    var o = $('overlay');
+    o.classList.add('open'); o.setAttribute('aria-hidden','false');
+    $('yesBtn').focus();
+  }
+  function closeDialog(){
+    var o = $('overlay');
+    o.classList.remove('open'); o.setAttribute('aria-hidden','true');
+    onYes = null; onNo = null;
+  }
+
+  // ---------- 그리기 ----------
+  function render(){
+    $('roundPill').textContent = '라운드 ' + S.round + '/' + S.maxRound;
+    $('levelPill').textContent = (LEVEL_LABEL[S.diff] || '') + (S.ta ? ' ⏱' : '');
+
+    var cur = Math.min(S.round - 1, BGS.length - 1);
+    Array.prototype.forEach.call($('dots').children, function(d, i){
+      d.style.display = i < S.maxRound ? '' : 'none';
+      d.classList.toggle('reached', i <= cur);
+      d.classList.toggle('now', i === cur);
+      d.style.backgroundColor = i <= cur ? BGS[i] : 'transparent';
+    });
+
+    var remaining = MAX_WRONG - S.wrong;
+    Array.prototype.forEach.call($('hearts').children, function(h, i){
+      h.classList.toggle('off', i >= remaining);
+    });
+
+    Array.prototype.forEach.call($('word').children, function(t){
+      var ch = t.dataset.ch;
+      var shown = S.guessed.has(ch);
+      var missed = S.status === 'lost' && !shown;
+      if (shown || missed){
+        t.firstChild.textContent = ch;
+        t.classList.add('on');
+      }
+      t.classList.toggle('hinted', shown && S.hinted.has(ch));
+      t.classList.toggle('miss', missed);
+    });
+
+    Object.keys(keyEls).forEach(function(L){
+      var b = keyEls[L];
+      var g = S.guessed.has(L);
+      var inWord = S.units.indexOf(L) !== -1;
+      b.disabled = g || S.status !== 'playing';
+      b.classList.toggle('correct', g && inWord && !S.hinted.has(L));
+      b.classList.toggle('hinted', g && S.hinted.has(L));
+      b.classList.toggle('wrong', g && !inWord);
+    });
+
+    Array.prototype.forEach.call($('gameSvgBox').querySelectorAll('.part'), function(p){
+      p.classList.toggle('show', S.wrong >= parseInt(p.getAttribute('data-stage'), 10));
+    });
+
+    $('hintCount').textContent = S.hints;
+    $('hintBtn').disabled = S.status !== 'playing' || S.hints <= 0;
+  }
+
+  // ---------- 이벤트 ----------
+  function bind(){
+    Array.prototype.forEach.call(document.querySelectorAll('.level-btn'), function(b){
+      b.addEventListener('click', function(){ startGame(b.getAttribute('data-diff')); });
+    });
+    $('hintBtn').addEventListener('click', useHint);
+    $('giveBtn').addEventListener('click', giveUp);
+    $('taBtn').addEventListener('click', function(){
+      S.ta = !S.ta;
+      this.classList.toggle('on', S.ta);
+      this.setAttribute('aria-pressed', S.ta ? 'true' : 'false');
+      this.textContent = '⏱ 타임어택 (단어당 60초) : ' + (S.ta ? 'ON' : 'OFF');
+    });
+    $('muteBtn').addEventListener('click', function(){
+      muted = !muted; this.textContent = muted ? '🔇 소리 OFF' : '🔊 소리 ON';
+    });
+    document.addEventListener('pointerdown', ac);
+    window.addEventListener('resize', fitFx);
+    $('yesBtn').addEventListener('click', function(){ var f = onYes; if (!f) return; closeDialog(); f(); });
+    $('noBtn').addEventListener('click', function(){ var f = onNo; if (!f) return; closeDialog(); f(); });
+    $('homeBtn').addEventListener('click', function(){
+      S.status = 'menu'; setBg(MENU_BG); showScreen('menu');
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (S.status !== 'playing') return;
+      if (S.lang !== 'en' || isDlg()) return;
+      var m = /^Key([A-Z])$/.exec(e.code || '');
+      if (m) guess(m[1]);
+    });
+    window.addEventListener('resize', setTileSize);
+  }
+
+  buildStatic();
+  bind();
+})();
+</script>
+</body>
+</html>
